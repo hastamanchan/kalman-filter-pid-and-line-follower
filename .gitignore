@@ -1,0 +1,558 @@
+/*****************************************************
+This program was produced by the
+CodeWizardAVR V2.05.3 Standard
+Automatic Program Generator
+© Copyright 1998-2011 Pavel Haiduc, HP InfoTech s.r.l.
+http://www.hpinfotech.com
+
+Project : 
+Version : 
+Date    : 1/16/2015
+Author  : halofi
+Company : h_conceptr
+Comments: 
+
+
+Chip type               : ATmega32
+Program type            : Application
+AVR Core Clock frequency: 12.000000 MHz
+Memory model            : Small
+External RAM size       : 0
+Data Stack size         : 512
+*****************************************************/
+
+#include <mega32.h>
+#include <io.h>
+#include <math.h>
+#include <stdlib.h>
+#include <delay.h>
+
+// Alphanumeric LCD functions
+#include <alcd.h>
+
+#define ADC_VREF_TYPE 0x40
+#define kirimaju PORTB.7
+#define kirimundur PORTB.6
+#define kananmaju PORTB.5
+#define kananmundur PORTB.4
+#define pwmkiri OCR1B
+#define pwmkanan OCR1A
+
+// Read the AD conversion result
+unsigned int read_adc(unsigned char adc_input)
+{
+ADMUX=adc_input | (ADC_VREF_TYPE & 0xff);
+// Delay needed for the stabilization of the ADC input voltage
+delay_us(10);
+// Start the AD conversion
+ADCSRA|=0x40;
+// Wait for the AD conversion to complete
+while ((ADCSRA & 0x10)==0);
+ADCSRA|=0x10;
+return ADCW;
+}
+
+// Declare your global variables here
+
+
+int test, error, hasil, a, lasterror, p, d, d1, d2, i1, i, pd,kp,ki,kd;
+int xkalman = 0,pkalman = 0,kkalman;
+int rkalman, qkalman;
+eeprom  int  kpeprom = 1;
+eeprom int kieprom = 1;
+eeprom  int kdeprom = 1;
+
+eeprom int qkalmaneprom = 1;
+eeprom int rkalmaneprom = 1;
+
+int kalman(int measure, int qk, int rk){
+xkalman = xkalman;
+
+pkalman = pkalman + qk;
+
+kkalman = pkalman / (pkalman + rk);
+
+xkalman = xkalman + kkalman*(measure-xkalman);
+
+pkalman = (1-kkalman)*pkalman;
+
+return xkalman;
+}
+
+int hitungerror(){
+
+if (read_adc(3) < 800 || read_adc(4) <800) {
+    a=0;
+    error = 0;
+    return error;
+    
+}
+else if (read_adc(2) < 800){
+    a=0;
+    error = -10;
+    return error;
+} 
+else if (read_adc(1) < 800){
+    a=0;
+    error = -30;
+    return error;
+}
+
+else if (read_adc(0) < 800){
+    a=0;
+    error = -60;
+    return error;
+}
+else if (read_adc(5) < 800){
+    a=0;
+    error =  10;
+    return error;
+}
+else if(read_adc(6) <800) {
+    a=0;
+    error = 30;
+    return error;
+}
+else if(read_adc(7) < 800) {
+    a=0;
+    error =  60;
+    return error;
+}
+else
+{
+    if(a < 300) {
+    error = error;
+    a++;
+    }  
+    else{
+    error = -60;
+    }
+    return error;
+}
+
+}
+
+
+int hitungpid(int kp, int ki, int kd, int errorpid){
+ 
+    test = lasterror;
+     p = kp * errorpid;
+     d1 = kd * 10;
+     i = errorpid;
+     i1 = ki * i;
+     i1 = i1/10;
+     d2 = errorpid-lasterror;
+     d = d2 * d1;
+     lasterror = errorpid;
+     pd = p+d+i1;
+    
+    return pd;     
+
+}
+
+
+void main(void)
+{
+// Declare your local variables here
+
+// Input/Output Ports initialization
+// Port A initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTA=0x00;
+DDRA=0x00;
+
+// Port B initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTB=0x0e; // oooo 111o
+DDRB=0xf1;
+
+// Port C initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTC=0x00;
+DDRC=0x00;
+
+// Port D initialization
+// Func7=In Func6=In Func5=Out Func4=Out Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=0 State4=0 State3=T State2=T State1=T State0=T 
+PORTD=0x00;
+DDRD=0x30;
+
+// Timer/Counter 0 initialization
+// Clock source: System Clock
+// Clock value: Timer 0 Stopped
+// Mode: Normal top=0xFF
+// OC0 output: Disconnected
+TCCR0=0x00;
+TCNT0=0x00;
+OCR0=0x00;
+
+// Timer/Counter 1 initialization
+// Clock source: System Clock
+// Clock value: 1500.000 kHz
+// Mode: Fast PWM top=0x03FF
+// OC1A output: Non-Inv.
+// OC1B output: Non-Inv.
+// Noise Canceler: Off
+// Input Capture on Falling Edge
+// Timer1 Overflow Interrupt: Off
+// Input Capture Interrupt: Off
+// Compare A Match Interrupt: Off
+// Compare B Match Interrupt: Off
+TCCR1A=0xA3;
+TCCR1B=0x0A;
+TCNT1H=0x00;
+TCNT1L=0x00;
+ICR1H=0x00;
+ICR1L=0x00;
+OCR1AH=0x00;
+OCR1AL=0x00;
+OCR1BH=0x00;
+OCR1BL=0x00;
+
+// Timer/Counter 2 initialization
+// Clock source: System Clock
+// Clock value: Timer2 Stopped
+// Mode: Normal top=0xFF
+// OC2 output: Disconnected
+ASSR=0x00;
+TCCR2=0x00;
+TCNT2=0x00;
+OCR2=0x00;
+
+// External Interrupt(s) initialization
+// INT0: Off
+// INT1: Off
+// INT2: Off
+MCUCR=0x00;
+MCUCSR=0x00;
+
+// Timer(s)/Counter(s) Interrupt(s) initialization
+TIMSK=0x00;
+
+// USART initialization
+// USART disabled
+UCSRB=0x00;
+
+// Analog Comparator initialization
+// Analog Comparator: Off
+// Analog Comparator Input Capture by Timer/Counter 1: Off
+ACSR=0x80;
+SFIOR=0x00;
+
+// ADC initialization
+// ADC Clock frequency: 750.000 kHz
+// ADC Voltage Reference: AVCC pin
+ADMUX=ADC_VREF_TYPE & 0xff;
+ADCSRA=0x84;
+
+// SPI initialization
+// SPI disabled
+SPCR=0x00;
+
+// TWI initialization
+// TWI disabled
+TWCR=0x00;
+
+// Alphanumeric LCD initialization
+// Connections are specified in the
+// Project|Configure|C Compiler|Libraries|Alphanumeric LCD menu:
+// RS - PORTC Bit 0
+// RD - PORTD Bit 3
+// EN - PORTC Bit 1
+// D4 - PORTC Bit 2
+// D5 - PORTC Bit 3
+// D6 - PORTC Bit 4
+// D7 - PORTC Bit 5
+// Characters/line: 16
+lcd_init(16);
+
+while (1)
+      {
+      // Place your code here
+          int error1,kecepatankanan,kecepatankiri;
+          char dummy[6];       
+           
+           int eeprom *ptr_kp;
+           int eeprom*ptr_ki;
+           int eeprom*ptr_kd;   
+           int eeprom*ptr_qkalmaneprom;
+           int eeprom*ptr_rkalmaneprom;
+           
+           ptr_kp = &kpeprom;
+           ptr_ki = &kieprom;
+           ptr_kd = &kdeprom; 
+           ptr_qkalmaneprom = &qkalmaneprom;
+           ptr_rkalmaneprom = &rkalmaneprom;         
+
+          
+            
+          kp = *ptr_kp;
+          ki = *ptr_ki;
+          kd = *ptr_kd;
+          qkalman = *ptr_qkalmaneprom;
+          rkalman = *ptr_rkalmaneprom;
+        do  {        
+            
+                delay_us(500);
+                lcd_clear(); 
+                lcd_gotoxy(0,0);
+                lcd_puts("qkalman:");
+                lcd_gotoxy(0,1);
+                itoa(qkalman,dummy);
+                lcd_puts(dummy);
+                
+                if(PINB.1 == 0)
+                {
+                    qkalman++; 
+                    delay_ms(300);
+                }
+                else if(PINB.3 ==0)
+                {
+                    if(qkalman == 0){
+                    qkalman = 0;
+                    }
+                    else
+                    {
+                    qkalman--;
+                    }       
+                    delay_ms(300);
+                }
+                 }
+          while (PINB.2 == 1);
+         qkalmaneprom = qkalman;  
+          delay_ms(300);
+       
+      
+       do  {        
+            
+                delay_us(500);
+                lcd_clear(); 
+                lcd_gotoxy(0,0);
+                lcd_puts("rkalman:");
+                lcd_gotoxy(0,1);
+                itoa(rkalman,dummy);
+                lcd_puts(dummy);
+                
+                if(PINB.1 == 0)
+                {
+                    rkalman++; 
+                    delay_ms(300);
+                }
+                else if(PINB.3 ==0)
+                {
+                    if(rkalman == 0){
+                    rkalman = 0;
+                    }
+                    else
+                    {
+                    rkalman--;
+                    }       
+                    delay_ms(300);
+                }
+                 }
+          while (PINB.2 == 1);
+         rkalmaneprom = rkalman;  
+          delay_ms(300);
+
+            
+        do  {        
+            
+                delay_us(500);
+                lcd_clear(); 
+                lcd_gotoxy(0,0);
+                lcd_puts("kp:");
+                lcd_gotoxy(0,1);
+                itoa(kp,dummy);
+                lcd_puts(dummy);
+                
+                if(PINB.1 == 0)
+                {
+                    kp++; 
+                    delay_ms(300);
+                }
+                else if(PINB.3 ==0)
+                {
+                    if(kp == 0){
+                    kp = 0;
+                    }
+                    else
+                    {
+                    kp--;
+                    }       
+                    delay_ms(300);
+                }
+                 }
+          while (PINB.2 == 1);
+         kpeprom = kp;  
+          delay_ms(300);
+        
+        do  {        
+            
+                delay_us(500);
+                lcd_clear(); 
+                lcd_gotoxy(0,0);
+                lcd_puts("ki:");
+                lcd_gotoxy(0,1);
+                itoa(ki,dummy);
+                lcd_puts(dummy);
+                
+                if(PINB.1 == 0)
+                {
+                    ki++;
+                    delay_ms(300);
+                }
+                else if(PINB.3 ==0)
+                {
+                    if(ki == 0){
+                    ki = 0;
+                    }
+                    else
+                    {
+                    ki--;
+                    }             
+                    delay_ms(300);
+                }
+                 }
+          while (PINB.2 == 1);  
+          kieprom = ki;
+          delay_ms(300);      
+        
+        do  {        
+            
+                delay_us(300);
+                lcd_clear(); 
+                lcd_gotoxy(0,0);
+                lcd_puts("kd:");
+                lcd_gotoxy(0,1);
+                itoa(kd,dummy);
+                lcd_puts(dummy);
+                
+                if(PINB.1 == 0)
+                {
+                    kd++;
+                    delay_ms(300);
+                }
+                else if(PINB.3 ==0)
+                {
+                    if(kd == 0){
+                    kd = 0;
+                    }
+                    else
+                    {
+                    kd--;
+                    }             
+                    delay_ms(300);
+                }
+                 }
+          while (PINB.2 == 1); 
+             kdeprom = kd;  
+               delay_ms(300);
+           
+           
+           do{
+          
+            delay_us(200);
+            lcd_clear();   
+            
+            error1 = hitungerror(); 
+            error1 = kalman(error1,qkalman,rkalman);  
+            hasil = hitungpid(kp,ki,kd,error1);
+     
+            itoa(error1,dummy);
+            lcd_gotoxy(0,0);
+            lcd_puts(dummy);
+            
+            itoa(kp,dummy);
+            lcd_gotoxy(5,0);
+            lcd_puts(dummy);
+            
+            itoa(ki,dummy);
+            lcd_gotoxy(8,0);
+            lcd_puts(dummy);
+            
+            itoa(kd,dummy);
+            lcd_gotoxy(11,0);
+            lcd_puts(dummy);
+            
+            itoa(hasil,dummy);
+            lcd_gotoxy(0,1);
+            lcd_puts(dummy);
+           
+            kecepatankanan = 600 - hasil;
+            
+            kecepatankiri = 700 + hasil;  
+            
+            if(kecepatankanan >= 800){
+            kecepatankanan = 800;
+            }          
+            if(kecepatankiri >=700){
+            kecepatankiri = 700;
+            }  
+            
+            if(kecepatankanan <= 0){
+            kecepatankanan = 0;
+            }           
+            if (kecepatankiri <=0) {
+            kecepatankiri = 0;
+            }
+            
+            itoa(kecepatankanan,dummy);
+            lcd_gotoxy(5,1);
+            lcd_puts(dummy);
+            itoa(kecepatankiri,dummy);
+            lcd_gotoxy(9,1);
+            lcd_puts(dummy);
+
+
+           
+            
+            if(error1 >= -30 && error1 <= 30) {
+                pwmkanan  = kecepatankanan;
+                pwmkiri = kecepatankiri;
+                kananmaju = 1;
+                kirimaju = 1;
+                kananmundur = 0;
+                kirimundur = 0;
+            }
+            else if (error1 < -30)
+            {
+                pwmkanan  = kecepatankanan - 300;
+                pwmkiri = kecepatankiri - 400;
+                kananmaju = 1;
+                kirimundur = 1;
+                kananmundur = 0;
+                kirimaju = 0;
+            }            
+            else
+            {
+                 pwmkanan  = kecepatankanan - 400;
+                pwmkiri = kecepatankiri - 300;
+                kananmaju = 0;
+                kirimaju = 1;
+                kananmundur = 1;
+                kirimundur = 0;
+            }
+            
+            
+           }
+           while(PINB.2 == 1);
+            
+            pwmkanan = 1024;
+            pwmkiri = 1024;
+            kananmundur= 0;
+            kananmaju = 0;
+            kirimundur = 0;
+            kirimaju = 0;
+          
+             delay_ms(300);
+           
+           
+           
+        
+
+      }
+}
+
